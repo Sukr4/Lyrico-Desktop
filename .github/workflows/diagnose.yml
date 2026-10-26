@@ -1,0 +1,31 @@
+name: Diagnose Windows build
+on:
+  push:
+    paths: [.github/workflows/diagnose.yml]
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const response = await github.rest.actions.downloadWorkflowRunLogs({...context.repo,run_id:40281300050});
+            fs.writeFileSync('logs.zip', Buffer.from(response.data));
+      - run: unzip -q logs.zip -d logs
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            function files(dir) { return fs.readdirSync(dir,{withFileTypes:true}).flatMap(e => e.isDirectory()?files(path.join(dir,e.name)):[path.join(dir,e.name)]); }
+            const content = files('logs').filter(p=>p.endsWith('.txt')).map(p=>'FILE: '+p+'\n'+fs.readFileSync(p,'utf8')).join('\n\n');
+            try { await github.rest.git.createRef({...context.repo,ref:'refs/heads/ci-diagnostics',sha:context.sha}); } catch(e) { if(e.status!==422) throw e; }
+            const target='run-40281300050.txt';
+            let sha;
+            try { const r=await github.rest.repos.getContent({...context.repo,path:target,ref:'ci-diagnostics'}); sha=r.data.sha; } catch(e) { if(e.status!==404) throw e; }
+            await github.rest.repos.createOrUpdateFileContents({...context.repo,branch:'ci-diagnostics',path:target,message:'Save failed build diagnostics',content:Buffer.from(content).toString('base64'),sha});
