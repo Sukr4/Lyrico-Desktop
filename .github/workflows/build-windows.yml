@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 jobs:
   build-windows:
@@ -53,6 +54,16 @@ jobs:
           $ErrorActionPreference = 'Continue'
           npm run tauri build 2>&1 | Tee-Object -FilePath build.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Publish build diagnostics
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const log = fs.existsSync('build.log') ? fs.readFileSync('build.log', 'utf8') : 'build.log was not created';
+            const body = 'Automated Windows build log for commit ' + context.sha + '\n\n~~~text\n' + log.slice(-60000) + '\n~~~';
+            await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title: 'Windows build log ' + context.runNumber, body });
 
       - name: Upload build diagnostics
         if: always()
